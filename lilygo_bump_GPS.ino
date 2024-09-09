@@ -14,6 +14,8 @@
 #include <ArduinoJson.h>
 #include <Adafruit_MPU6050.h>
 
+#include "secrets.h"
+
 // Define the serial console for debug prints, if needed
 #define TINY_GSM_DEBUG SerialMon
 #define LOGGING  // <- Logging is for the HTTP library
@@ -73,7 +75,7 @@ TinyGsmClient traccarClient(modem);
 #define INT_PIN             32
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
-#define TIME_TO_SLEEP 1200 // 5 minutes
+#define TIME_TO_SLEEP 1500 // 25 minutes
 
 Adafruit_MPU6050 mpu;
 
@@ -271,7 +273,7 @@ void sendBumpStatus() {
   haHttp.beginRequest();
 
   int err = haHttp.post(resource);
-  haHttp.sendHeader("Authorization", "Bearer ...");
+  haHttp.sendHeader("Authorization", BEARER_TOKEN);
   haHttp.sendHeader(F("Content-Type"), F("application/json"));
   haHttp.sendHeader(F("Content-Length"), json.length());
   haHttp.beginBody();
