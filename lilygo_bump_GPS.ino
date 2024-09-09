@@ -125,16 +125,16 @@ void parse_movement_data() {
     SerialMon.print(g.gyro.z);
     SerialMon.println("");
     
-    flash_led(5);
+    flash_led(5, 100);
   }
 }
 
-void flash_led(int count) {
+void flash_led(int count, int delay_amount) {
   for (int i = 0; i < count; i++) {
     digitalWrite(LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    delay(100);                       // wait for a second
+    delay(delay_amount);           // wait for a period of time
     digitalWrite(LED_PIN, LOW);    // turn the LED off by making the voltage LOW
-    delay(100);  
+    delay(delay_amount);  
   }
 }
 
@@ -236,6 +236,7 @@ void dispatchGPSData() {
   int vsat, usat, year, month, day, hour, min, sec;
   SerialMon.println("get GPS attempt");
   while (1) {
+    battery = ReadBattery();
     if (modem.getGPS(&lat, &lon, &speed, &alt, &vsat, &usat, &accuracy, &year, &month, &day, &hour, &min, &sec)) {
       SerialMon.println("get GPS worked");
       SerialMon.printf("lat:%f lon:%f\n", lat, lon);
@@ -358,7 +359,7 @@ void setup() {
   // Try to initialize!
   if (!mpu.begin()) {
     SerialMon.println("Failed to find MPU6050 chip");
-      flash_led(10);
+      flash_led(10, 100);
       // esp_restart();
 
   }
@@ -371,8 +372,6 @@ void setup() {
   mpu.setInterruptPinLatch(true);  // Keep it latched.  Will turn off when reinitialized.
   mpu.setInterruptPinPolarity(true);
   mpu.setMotionInterrupt(true);
-
-  // Serial.println("");
 }
 
 void loop() {
@@ -390,15 +389,11 @@ void loop() {
     SerialMon.println("Network connected");
   }
   wakeup_routine();
-  // sendBumpStatus();
-  // dispatchGPSData();
-  
 
   modem.gprsDisconnect();
   SerialMon.println(F("GPRS disconnected"));
 
     // --------POWER DOWN--------
-
   // Try to power-off (modem may decide to restart automatically)
   // To turn off modem completely, please use Reset/Enable pins
   modem.sendAT("+CPOWD=1");
@@ -407,6 +402,7 @@ void loop() {
   }
   // The following command does the same as the previous lines
   Serial.println("Poweroff and go to sleep.");
+  flash_led(3, 1000);
   modem.poweroff();
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0);
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
