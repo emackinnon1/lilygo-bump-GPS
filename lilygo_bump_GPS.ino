@@ -271,7 +271,7 @@ void sendBumpStatus() {
   haHttp.beginRequest();
 
   int err = haHttp.post(resource);
-  haHttp.sendHeader("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmNWM1YjliZTlkZGI0YjEyYThjNDkzMGNmNGYyNzFmZSIsImlhdCI6MTcyNTU3OTcxMCwiZXhwIjoyMDQwOTM5NzEwfQ.bqkI6gkzLveEesYrUaHT9dpTT4u1dn07Lp4_79vx-dM");
+  haHttp.sendHeader("Authorization", "Bearer ...");
   haHttp.sendHeader(F("Content-Type"), F("application/json"));
   haHttp.sendHeader(F("Content-Length"), json.length());
   haHttp.beginBody();
