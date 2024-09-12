@@ -75,7 +75,7 @@ TinyGsmClient traccarClient(modem);
 #define INT_PIN             32
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
-#define TIME_TO_SLEEP 1500 // 25 minutes
+#define TIME_TO_SLEEP 3600 // 25 minutes
 
 Adafruit_MPU6050 mpu;
 
@@ -95,7 +95,7 @@ void wakeup_routine(){
     case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); dispatchGPSData(); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
-    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); dispatchGPSData(); break; // we fire here because it updates the battery on wakeup
   }
 }
 
@@ -369,7 +369,7 @@ void setup() {
 
   //setup motion detection
   mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
-  mpu.setMotionDetectionThreshold(5);
+  mpu.setMotionDetectionThreshold(25);
   mpu.setMotionDetectionDuration(10);
   mpu.setInterruptPinLatch(true);  // Keep it latched.  Will turn off when reinitialized.
   mpu.setInterruptPinPolarity(true);
