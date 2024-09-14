@@ -75,7 +75,7 @@ TinyGsmClient traccarClient(modem);
 #define INT_PIN             32
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
-#define TIME_TO_SLEEP 3600 // 25 minutes
+#define TIME_TO_SLEEP 1500 // 25 minutes
 
 Adafruit_MPU6050 mpu;
 
@@ -95,7 +95,7 @@ void wakeup_routine(){
     case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); dispatchGPSData(); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
-    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); dispatchGPSData(); break; // we fire here because it updates the battery on wakeup
+    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
   }
 }
 
@@ -133,7 +133,7 @@ void parse_movement_data() {
 
 void flash_led(int count, int delay_amount) {
   for (int i = 0; i < count; i++) {
-    digitalWrite(LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+    digitalWrite(LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level
     delay(delay_amount);           // wait for a period of time
     digitalWrite(LED_PIN, LOW);    // turn the LED off by making the voltage LOW
     delay(delay_amount);  
@@ -369,7 +369,7 @@ void setup() {
 
   //setup motion detection
   mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
-  mpu.setMotionDetectionThreshold(25);
+  mpu.setMotionDetectionThreshold(10);
   mpu.setMotionDetectionDuration(10);
   mpu.setInterruptPinLatch(true);  // Keep it latched.  Will turn off when reinitialized.
   mpu.setInterruptPinPolarity(true);
@@ -380,6 +380,7 @@ void loop() {
   modem.gprsConnect(apn, gprsUser, gprsPass);
 
   SerialMon.print("Waiting for network...");
+  flash_led(3, 100);
   if (!modem.waitForNetwork()) {
     SerialMon.println(" fail");
     delay(10000);
@@ -409,5 +410,6 @@ void loop() {
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0);
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   delay(200);
+  digitalWrite(LED_PIN, LOW);
   esp_deep_sleep_start();
 }
