@@ -40,11 +40,11 @@ const char gprsPass[] = "";
 
 // Server details
 const int  port       = 443;
-const char server[]   = "fqegi45te5mrx65r42glg3kivdqqesyd.ui.nabu.casa";
+const char server[]   = "unique-home-assistant-nabu-casa-url.ui.nabu.casa"; // your unique nabu casa url
 const char resource[] = "/api/states/binary_sensor.lilygo_bump_status";
 
 const int traccarPort        = 5055;
-const char traccarServer[]   = "45.55.84.20";
+const char traccarServer[]   = "XX.XX.XX.XX"; // your unique traccar server ip
 String myTraccarID = "lilygobumpgps";
 // const char server[]   = "httpbin.org"; // B - WORKING POST
 // const char resource[] = "/post"; // B - WORKING POST
@@ -95,7 +95,7 @@ void wakeup_routine(){
     case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); dispatchGPSData(); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
-    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); dispatchGPSData(); break;
   }
 }
 
