@@ -41,7 +41,7 @@ const char gprsPass[] = "";
 // Server details
 const int  port       = 443;
 const char server[]   = "unique-home-assistant-nabu-casa-url.ui.nabu.casa"; // your unique nabu casa url
-const char resource[] = "/api/states/binary_sensor.lilygo_bump_status";
+const char resource[] = "/api/states/input_boolean.lilygo_bump_status";
 
 const int traccarPort        = 5055;
 const char traccarServer[]   = "XX.XX.XX.XX"; // your unique traccar server ip
@@ -73,6 +73,7 @@ TinyGsmClient traccarClient(modem);
 #define LED_PIN             12
 #define BAT_ADC             35
 #define INT_PIN             32
+#define ALARM_PIN           33
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
 #define TIME_TO_SLEEP 1500 // 25 minutes
@@ -90,13 +91,23 @@ void wakeup_routine(){
   wakeup_reason = esp_sleep_get_wakeup_cause();
   switch(wakeup_reason)
   {
-    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); parse_movement_data(); sendBumpStatus(); break;
+    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); sound_alarm(3, 300); parse_movement_data(); sendBumpStatus(); break;
     case ESP_SLEEP_WAKEUP_EXT1 : SerialMon.println("Wakeup caused by external signal using RTC_CNTL"); break;
     case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); dispatchGPSData(); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
     default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); dispatchGPSData(); break;
   }
+}
+
+void sound_alarm(int count, int delay_amount) {
+  for (int i = 0; i < count; i++) {
+    digitalWrite(ALARM_PIN, HIGH);   // turn the alarm relay on (HIGH is the voltage level
+    delay(delay_amount);           // wait for a period of time
+    digitalWrite(ALARM_PIN, LOW);    // turn the alarm relay off by making the voltage LOW
+    delay(delay_amount);  
+  }
+  digitalWrite(ALARM_PIN, LOW);
 }
 
 
@@ -138,6 +149,7 @@ void flash_led(int count, int delay_amount) {
     digitalWrite(LED_PIN, LOW);    // turn the LED off by making the voltage LOW
     delay(delay_amount);  
   }
+  digitalWrite(LED_PIN, LOW);
 }
 
 float ReadBattery() {
@@ -215,7 +227,7 @@ void sendData(float lat, float lon, float speed, float alt, float accuracy, floa
   Serial.println("/?id=" + myTraccarID + "&lat=" + FINALLATI + "&lon=" + FINALLOGI + "&accuracy=" + FINALACCURACY + "&altitude=" + FINALALT + "&speed=" + FINALSPEED + "&battery=" + FINALBAT + "&ignition=" + FINALIGNITION + "&batteryLevel=" + FINALBATLEVEL);
   if (err != 0) {
     SerialMon.println(F("failed to connect"));
-    delay(10000);
+    delay(1000);
   }
 
   int status = traccarHttp.responseStatusCode();
@@ -249,7 +261,7 @@ void dispatchGPSData() {
       Serial.println(millis());
     }
   }
-  digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+
   if (battery == 0) {
     delay(10000);
   } else {
@@ -326,7 +338,8 @@ void setup() {
 
   // Set LED OFF
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);
+  pinMode(ALARM_PIN, OUTPUT);
+  flash_led(3, 300);
 
   modemPowerOn();
 
@@ -339,7 +352,9 @@ void setup() {
   // Restart takes quite some time
   // To skip it, call init() instead of restart()
   SerialMon.println("Initializing modem...");
-  modem.restart();
+  if (!modem.init()) {
+    Serial.println("Failed to restart modem, attempting to continue without restarting");
+  }
   // modem.init();
 
   String modemInfo = modem.getModemInfo();
@@ -363,14 +378,14 @@ void setup() {
     SerialMon.println("Failed to find MPU6050 chip");
       flash_led(10, 100);
       // esp_restart();
-
+  } else {
+    SerialMon.println("MPU6050 Found!");
   }
-  SerialMon.println("MPU6050 Found!");
 
   //setup motion detection
   mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
-  mpu.setMotionDetectionThreshold(10);
-  mpu.setMotionDetectionDuration(10);
+  mpu.setMotionDetectionThreshold(5);
+  mpu.setMotionDetectionDuration(20);
   mpu.setInterruptPinLatch(true);  // Keep it latched.  Will turn off when reinitialized.
   mpu.setInterruptPinPolarity(true);
   mpu.setMotionInterrupt(true);
@@ -380,7 +395,6 @@ void loop() {
   modem.gprsConnect(apn, gprsUser, gprsPass);
 
   SerialMon.print("Waiting for network...");
-  flash_led(3, 100);
   if (!modem.waitForNetwork()) {
     SerialMon.println(" fail");
     delay(10000);
@@ -396,7 +410,7 @@ void loop() {
   modem.gprsDisconnect();
   SerialMon.println(F("GPRS disconnected"));
 
-    // --------POWER DOWN--------
+  // --------POWER DOWN--------
   // Try to power-off (modem may decide to restart automatically)
   // To turn off modem completely, please use Reset/Enable pins
   modem.sendAT("+CPOWD=1");
@@ -405,7 +419,7 @@ void loop() {
   }
   // The following command does the same as the previous lines
   Serial.println("Poweroff and go to sleep.");
-  flash_led(3, 1000);
+  flash_led(3, 500);
   modem.poweroff();
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0);
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
