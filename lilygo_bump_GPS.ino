@@ -80,23 +80,24 @@ TinyGsmClient traccarClient(modem);
 
 Adafruit_MPU6050 mpu;
 
+esp_sleep_wakeup_cause_t WAKEUP_REASON;
 
 /*
 Method to print the reason by which ESP32
 has been awaken from sleep
 */
 void wakeup_routine(){
-  esp_sleep_wakeup_cause_t wakeup_reason;
+  // esp_sleep_wakeup_cause_t wakeup_reason;
 
-  wakeup_reason = esp_sleep_get_wakeup_cause();
-  switch(wakeup_reason)
+  // wakeup_reason = esp_sleep_get_wakeup_cause();
+  switch(WAKEUP_REASON)
   {
-    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); sound_alarm(3, 300); parse_movement_data(); sendBumpStatus(); break;
+    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); parse_movement_data(); sendBumpStatus(); break;
     case ESP_SLEEP_WAKEUP_EXT1 : SerialMon.println("Wakeup caused by external signal using RTC_CNTL"); break;
     case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); dispatchGPSData(); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
-    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); dispatchGPSData(); break;
+    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",WAKEUP_REASON); dispatchGPSData(); break;
   }
 }
 
@@ -302,7 +303,7 @@ void sendBumpStatus() {
   SerialMon.print(F("Response status code: "));
   SerialMon.println(status);
   if (!status) {
-    delay(10000);
+    delay(1000);
     return;
   }
 
@@ -339,6 +340,10 @@ void setup() {
   // Set LED OFF
   pinMode(LED_PIN, OUTPUT);
   pinMode(ALARM_PIN, OUTPUT);
+  WAKEUP_REASON = esp_sleep_get_wakeup_cause();
+  if (WAKEUP_REASON == ESP_SLEEP_WAKEUP_EXT0) {
+    sound_alarm(3, 300);
+  }
   flash_led(3, 300);
 
   modemPowerOn();
