@@ -153,6 +153,45 @@ void flash_led(int count, int delay_amount) {
   digitalWrite(LED_PIN, LOW);
 }
 
+// ============================ ALTERNATIVE BATTERY READING ============================
+// void sortData(float data[], int8_t size) {             // Sorts all data small to large
+//   float swapper;
+//   for (int8_t i = 0; i < (size - 1); i++) {
+//     for (int8_t o = 0; o < (size - (i + 1)); o++) {
+//       if (data[o] > data[o + 1]) {
+//         swapper = data[o];
+//         data[o] = data[o + 1];
+//         data[o + 1] = swapper;
+//       }
+//     }
+//   }
+// }
+
+// float mapBatt(float x, float in_min, float in_max, float out_min, float out_max) {
+//   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+// }
+
+// float read_bat() {         // reads and returns the battery voltage
+//   int BP = 0;
+//   float v_bat = 0;
+//   const int VReads = 15;   
+//   float voltageBuffer[VReads];
+//   uint32_t Read_buffer = 0;
+//   for (int x = 0; x < VReads; x++) {
+//     for (int i = 0 ; i < VReads; i++) {
+//       voltageBuffer[i] = (uint32_t)analogRead(BAT_ADC);
+//     }
+//     sortData(voltageBuffer, VReads);
+//     Read_buffer += (voltageBuffer[(VReads - 1) / 2]);
+//   }
+//   v_bat = (((float)(Read_buffer / VReads) / 4096) * 3600 * 2) / 1000;
+//   BP = mapBatt(v_bat,2.5,4.2,0,100);     // get battery voltage as a percentage 0-100%
+//   if (BP < 0) { BP = 0; }
+//   return BP;
+// }
+
+// ============================ ALTERNATIVE BATTERY READING ============================
+
 float ReadBattery() {
   float vref = 1.100;
   uint16_t volt = analogRead(BAT_ADC);
@@ -264,12 +303,12 @@ void dispatchGPSData() {
   }
 
   if (battery == 0) {
-    delay(10000);
+    delay(5000);
   } else {
     int count = 0;
     while ((battery > 0) and (count < 90)) {
       battery = ReadBattery();
-      delay(10000);
+      delay(1000);
       count++;
     }
   }
