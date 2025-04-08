@@ -1,3 +1,5 @@
+// NOTE: BE SURE UPLOAD SPEED IN ARDUINO IDE TOOLS IS SET TO 115200
+// Board: ESP32 Dev Module
 // Select your modem
 // for https updates
 #define TINY_GSM_MODEM_SIM7000SSL
@@ -40,11 +42,12 @@ const char gprsPass[] = "";
 
 // Server details
 const int  port       = 443;
-const char server[]   = "unique-home-assistant-nabu-casa-url.ui.nabu.casa"; // your unique nabu casa url
+const char server[]   = "fqegi45te5mrx65r42glg3kivdqqesyd.ui.nabu.casa";
 const char resource[] = "/api/states/input_boolean.lilygo_bump_status";
+const char batteryResource[] = "/api/states/sensor.lilygo_battery";
 
 const int traccarPort        = 5055;
-const char traccarServer[]   = "XX.XX.XX.XX"; // your unique traccar server ip
+const char traccarServer[]   = "45.55.84.20";
 String myTraccarID = "lilygobumpgps";
 // const char server[]   = "httpbin.org"; // B - WORKING POST
 // const char resource[] = "/post"; // B - WORKING POST
@@ -92,12 +95,12 @@ void wakeup_routine(){
   // wakeup_reason = esp_sleep_get_wakeup_cause();
   switch(WAKEUP_REASON)
   {
-    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); parse_movement_data(); sendBumpStatus(); break;
+    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); parse_movement_data(); sendBumpStatus(); sendBatteryData(); break;
     case ESP_SLEEP_WAKEUP_EXT1 : SerialMon.println("Wakeup caused by external signal using RTC_CNTL"); break;
-    case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); dispatchGPSData(); break;
+    case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
-    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",WAKEUP_REASON); dispatchGPSData(); break;
+    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",WAKEUP_REASON); break;
   }
 }
 
@@ -314,22 +317,59 @@ void dispatchGPSData() {
   }
 }
 
+void sendBatteryData() {
+  // read battery
+  battery = ReadBattery();
+  String FINALBATLEVEL = "", FINALBAT = "0";
 
-void sendBumpStatus() {
+  if (battery == 0) {
+    delay(5000);
+  } else {
+    int count = 0;
+    while ((battery > 0) and (count < 90)) {
+      battery = ReadBattery();
+      delay(1000);
+      count++;
+    }
+  }
+
+  if (battery == 0) {
+    FINALBATLEVEL = "";
+    FINALBAT = "";
+  } else {
+    float batterylevel = (((float)battery - 3) / 1.2) * 100;
+    FINALBAT = String(battery, 2);
+    if (batterylevel > 100) {
+      batterylevel = 100;
+    }
+    FINALBATLEVEL = String(batterylevel, 0);
+  }
+
+  // send battery status to Home Assistant
+  SerialMon.print("Battery level: ");
+  SerialMon.print(FINALBATLEVEL);
+  SerialMon.print("Battery voltage: ");
+  SerialMon.print(FINALBAT);
+  String jsonBody = "{\"state\": \"" + FINALBATLEVEL +"\"}";
+  postHomeAssistant(batteryResource, jsonBody);
+}
+
+void postHomeAssistant(const char* resourceToPost, String body) {
   HttpClient haHttp(haClient, server, port);
   String contentType = "application/json";
-  String json = "{\"state\": \"on\"}";
 
   SerialMon.print(F("Performing HTTPS POST request to HA... "));
+  SerialMon.print("Resource: ");
+  SerialMon.println(resourceToPost);
   haHttp.connectionKeepAlive();  // Currently, this is needed for HTTPS
   haHttp.beginRequest();
 
-  int err = haHttp.post(resource);
+  int err = haHttp.post(resourceToPost);
   haHttp.sendHeader("Authorization", BEARER_TOKEN);
   haHttp.sendHeader(F("Content-Type"), F("application/json"));
-  haHttp.sendHeader(F("Content-Length"), json.length());
+  haHttp.sendHeader(F("Content-Length"), body.length());
   haHttp.beginBody();
-  haHttp.println(String("{\"state\": \"on\"}"));
+  haHttp.println(String(body));
   haHttp.endRequest();
 
   if (err != 0) {
@@ -370,10 +410,69 @@ void sendBumpStatus() {
   SerialMon.println(F("Server disconnected"));
 }
 
+void sendBumpStatus() {
+  String jsonBody = "{\"state\": \"on\"}";
+  postHomeAssistant(resource, jsonBody);
+
+
+  // HttpClient haHttp(haClient, server, port);
+  // String contentType = "application/json";
+  // String json = "{\"state\": \"on\"}";
+
+  // SerialMon.print(F("Performing HTTPS POST request to HA... "));
+  // haHttp.connectionKeepAlive();  // Currently, this is needed for HTTPS
+  // haHttp.beginRequest();
+
+  // int err = haHttp.post(resource);
+  // haHttp.sendHeader("Authorization", BEARER_TOKEN);
+  // haHttp.sendHeader(F("Content-Type"), F("application/json"));
+  // haHttp.sendHeader(F("Content-Length"), json.length());
+  // haHttp.beginBody();
+  // haHttp.println(String("{\"state\": \"on\"}"));
+  // haHttp.endRequest();
+
+  // if (err != 0) {
+  //   SerialMon.println(F("failed to connect"));
+  //   delay(10000);
+  //   return;
+  // }
+
+  // int status = haHttp.responseStatusCode();
+  // SerialMon.print(F("Response status code: "));
+  // SerialMon.println(status);
+  // if (!status) {
+  //   delay(1000);
+  //   return;
+  // }
+
+  // int length = haHttp.contentLength();
+  // if (length >= 0) {
+  //   SerialMon.print(F("Content length is: "));
+  //   SerialMon.println(length);
+  // }
+  // if (haHttp.isResponseChunked()) {
+  //   SerialMon.println(F("The response is chunked"));
+  // }
+  // String responsebody = haHttp.responseBody();
+  // SerialMon.println(F("Response:"));
+  // SerialMon.println(responsebody);
+
+  // int responseCode = haHttp.responseStatusCode();
+  // SerialMon.println(F("Response status:"));
+  // SerialMon.println(responseCode);
+
+  // SerialMon.print(F("Body length is: "));
+  // SerialMon.println(responsebody.length());
+
+  // // Shutdown
+  // haHttp.stop();
+  // SerialMon.println(F("Server disconnected"));
+}
+
 
 void setup() {
   // Set Serial Monitor baud rate
-  SerialMon.begin(115200);
+  SerialMon.begin(UART_BAUD);
   delay(10);
 
   // Set LED OFF
@@ -428,10 +527,10 @@ void setup() {
 
   //setup motion detection
   mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
-  mpu.setMotionDetectionThreshold(5);
+  mpu.setMotionDetectionThreshold(10);
   mpu.setMotionDetectionDuration(20);
   mpu.setInterruptPinLatch(true);  // Keep it latched.  Will turn off when reinitialized.
-  mpu.setInterruptPinPolarity(true);
+  mpu.setInterruptPinPolarity(true); // Need to get Adafruit MPU6050 for this call to actually work.
   mpu.setMotionInterrupt(true);
 }
 
