@@ -47,7 +47,7 @@ const char resource[] = "/api/states/input_boolean.lilygo_bump_status";
 const char batteryResource[] = "/api/states/sensor.lilygo_battery";
 
 const int traccarPort        = 5055;
-const char traccarServer[]   = "45.55.84.20";
+const char traccarServer[]   = "73.243.144.236"; // your unique traccar server ip
 String myTraccarID = "lilygobumpgps";
 // const char server[]   = "httpbin.org"; // B - WORKING POST
 // const char resource[] = "/post"; // B - WORKING POST
@@ -79,11 +79,24 @@ TinyGsmClient traccarClient(modem);
 #define ALARM_PIN           33
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
-#define TIME_TO_SLEEP 1500 // 25 minutes
+#define TIME_TO_SLEEP 3600 // 1 hour
+
+// Movement/reporting timing (Option A)
+#define MOVING_UPDATE_INTERVAL_S 180      // 3 minutes while in motion mode
+#define BUMP_WINDOW_INTERVAL_S   180      // 3-minute window to detect a 2nd bump
+#define MOVING_IDLE_MAX_INTERVALS 2       // exit motion after 2 consecutive timer wakes with no bumps
 
 Adafruit_MPU6050 mpu;
 
 esp_sleep_wakeup_cause_t WAKEUP_REASON;
+
+// RTC state across deep sleep
+RTC_DATA_ATTR bool rtcMoving = false;             // In motion mode (suppress alarm/HA, use 3-min timer, send GPS on timer)
+RTC_DATA_ATTR bool rtcBumpWindowActive = false;   // First bump seen; waiting for second within 3 minutes
+RTC_DATA_ATTR uint8_t rtcNoMotionIntervals = 0;   // Consecutive timer-only intervals while in motion
+
+// Non-RTC per-boot flag to control HA bump send on this wake
+bool g_sendBumpHAThisBoot = false;
 
 /*
 Method to print the reason by which ESP32
@@ -95,9 +108,43 @@ void wakeup_routine(){
   // wakeup_reason = esp_sleep_get_wakeup_cause();
   switch(WAKEUP_REASON)
   {
-    case ESP_SLEEP_WAKEUP_EXT0 : SerialMon.println("Wakeup caused by external signal using RTC_IO"); parse_movement_data(); sendBumpStatus(); sendBatteryData(); break;
+    case ESP_SLEEP_WAKEUP_EXT0 : {
+      SerialMon.println("Wakeup caused by external signal using RTC_IO");
+      // Any bump indicates motion recently; reset no-motion counter
+      rtcNoMotionIntervals = 0;
+      parse_movement_data();
+      if (g_sendBumpHAThisBoot) {
+        // First bump in window: report to HA
+        sendBumpStatus();
+        sendBatteryData();
+      } else {
+        SerialMon.println("Suppressing HA/alarm due to bump window or moving mode");
+      }
+      break;
+    }
     case ESP_SLEEP_WAKEUP_EXT1 : SerialMon.println("Wakeup caused by external signal using RTC_CNTL"); break;
-    case ESP_SLEEP_WAKEUP_TIMER : SerialMon.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TIMER : {
+      SerialMon.println("Wakeup caused by timer");
+      // If we were waiting for a second bump and the window elapsed without one, clear the window
+      if (rtcBumpWindowActive && !rtcMoving) {
+        SerialMon.println("Bump window expired without second bump; clearing window");
+        rtcBumpWindowActive = false;
+        // Do not send GPS for this window-expiry timer
+        break;
+      }
+      // Otherwise, perform the normal periodic GPS dispatch (moving or stationary)
+      dispatchGPSData();
+      if (rtcMoving) {
+        // Track inactivity while in motion mode
+        rtcNoMotionIntervals++;
+        if (rtcNoMotionIntervals >= MOVING_IDLE_MAX_INTERVALS) {
+          SerialMon.println("No bumps across intervals; exiting motion mode");
+          rtcMoving = false;
+          rtcNoMotionIntervals = 0;
+        }
+      }
+      break;
+    }
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
     default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",WAKEUP_REASON); break;
@@ -413,60 +460,6 @@ void postHomeAssistant(const char* resourceToPost, String body) {
 void sendBumpStatus() {
   String jsonBody = "{\"state\": \"on\"}";
   postHomeAssistant(resource, jsonBody);
-
-
-  // HttpClient haHttp(haClient, server, port);
-  // String contentType = "application/json";
-  // String json = "{\"state\": \"on\"}";
-
-  // SerialMon.print(F("Performing HTTPS POST request to HA... "));
-  // haHttp.connectionKeepAlive();  // Currently, this is needed for HTTPS
-  // haHttp.beginRequest();
-
-  // int err = haHttp.post(resource);
-  // haHttp.sendHeader("Authorization", BEARER_TOKEN);
-  // haHttp.sendHeader(F("Content-Type"), F("application/json"));
-  // haHttp.sendHeader(F("Content-Length"), json.length());
-  // haHttp.beginBody();
-  // haHttp.println(String("{\"state\": \"on\"}"));
-  // haHttp.endRequest();
-
-  // if (err != 0) {
-  //   SerialMon.println(F("failed to connect"));
-  //   delay(10000);
-  //   return;
-  // }
-
-  // int status = haHttp.responseStatusCode();
-  // SerialMon.print(F("Response status code: "));
-  // SerialMon.println(status);
-  // if (!status) {
-  //   delay(1000);
-  //   return;
-  // }
-
-  // int length = haHttp.contentLength();
-  // if (length >= 0) {
-  //   SerialMon.print(F("Content length is: "));
-  //   SerialMon.println(length);
-  // }
-  // if (haHttp.isResponseChunked()) {
-  //   SerialMon.println(F("The response is chunked"));
-  // }
-  // String responsebody = haHttp.responseBody();
-  // SerialMon.println(F("Response:"));
-  // SerialMon.println(responsebody);
-
-  // int responseCode = haHttp.responseStatusCode();
-  // SerialMon.println(F("Response status:"));
-  // SerialMon.println(responseCode);
-
-  // SerialMon.print(F("Body length is: "));
-  // SerialMon.println(responsebody.length());
-
-  // // Shutdown
-  // haHttp.stop();
-  // SerialMon.println(F("Server disconnected"));
 }
 
 
@@ -480,7 +473,24 @@ void setup() {
   pinMode(ALARM_PIN, OUTPUT);
   WAKEUP_REASON = esp_sleep_get_wakeup_cause();
   if (WAKEUP_REASON == ESP_SLEEP_WAKEUP_EXT0) {
-    sound_alarm(3, 300);
+    // Two-bump within 3 minutes logic
+    if (rtcMoving) {
+      // Already in motion mode: suppress alarm/HA
+      g_sendBumpHAThisBoot = false;
+      SerialMon.println("Already moving; suppressing alarm/HA");
+    } else if (rtcBumpWindowActive) {
+      // Second bump within window -> enter motion mode, suppress alarm/HA
+      rtcMoving = true;
+      rtcBumpWindowActive = false;
+      g_sendBumpHAThisBoot = false;
+      SerialMon.println("Second bump within window -> entering motion mode");
+    } else {
+      // First bump -> start window, allow alarm/HA this time
+      rtcBumpWindowActive = true;
+      g_sendBumpHAThisBoot = true;
+      sound_alarm(3, 300);
+      SerialMon.println("First bump -> starting 3-minute window");
+    }
   }
   flash_led(3, 300);
 
@@ -565,7 +575,14 @@ void loop() {
   flash_led(3, 500);
   modem.poweroff();
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0);
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  // Choose next sleep duration based on state
+  uint32_t nextSleepSec = TIME_TO_SLEEP;
+  if (rtcMoving) {
+    nextSleepSec = MOVING_UPDATE_INTERVAL_S;
+  } else if (rtcBumpWindowActive) {
+    nextSleepSec = BUMP_WINDOW_INTERVAL_S;
+  }
+  esp_sleep_enable_timer_wakeup((uint64_t)nextSleepSec * uS_TO_S_FACTOR);
   delay(200);
   digitalWrite(LED_PIN, LOW);
   esp_deep_sleep_start();
