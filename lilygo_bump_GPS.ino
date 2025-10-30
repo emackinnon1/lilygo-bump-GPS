@@ -243,11 +243,20 @@ void flash_led(int count, int delay_amount) {
 
 // ============================ ALTERNATIVE BATTERY READING ============================
 
-float ReadBattery() {
+float readBattery() {
   float vref = 1.100;
   uint16_t volt = analogRead(BAT_ADC);
   float battery_voltage = ((float)volt / 4095.0) * 2.0 * 3.3 * (vref);
   return battery_voltage;
+}
+
+// Convert measured battery voltage into percentage (0-100)
+// Assumes 3.0V = 0% and 4.2V = 100%
+int batteryPercentFromVoltage(float voltage) {
+  float pct = ((voltage - 3.0f) / 1.2f) * 100.0f;
+  if (pct < 0.0f) pct = 0.0f;
+  if (pct > 100.0f) pct = 100.0f;
+  return (int)(pct + 0.5f); // round to nearest integer
 }
 
 void modemPowerOn(){
@@ -309,12 +318,9 @@ void sendData(float lat, float lon, float speed, float alt, float accuracy, floa
     FINALBAT = "";
     FINALIGNITION = "true";
   } else {
-    float batterylevel = (((float)battery - 3) / 1.2) * 100;
+    int batteryPercent = batteryPercentFromVoltage(battery);
     FINALBAT = String(battery, 2);
-    if (batterylevel > 100) {
-      batterylevel = 100;
-    }
-    FINALBATLEVEL = String(batterylevel, 0);
+    FINALBATLEVEL = String(batteryPercent);
     FINALIGNITION = "false";
   }
 
@@ -347,7 +353,7 @@ void dispatchGPSData() {
   int vsat, usat, year, month, day, hour, min, sec;
   SerialMon.println("get GPS attempt");
   while (1) {
-    battery = ReadBattery();
+    battery = batteryPercentFromVoltage(readBattery());
     if (modem.getGPS(&lat, &lon, &speed, &alt, &vsat, &usat, &accuracy, &year, &month, &day, &hour, &min, &sec)) {
       SerialMon.println("get GPS worked");
       SerialMon.printf("lat:%f lon:%f\n", lat, lon);
@@ -364,7 +370,7 @@ void dispatchGPSData() {
   } else {
     int count = 0;
     while ((battery > 0) and (count < 90)) {
-      battery = ReadBattery();
+      battery = readBattery();
       delay(1000);
       count++;
     }
@@ -373,7 +379,7 @@ void dispatchGPSData() {
 
 void sendBatteryData() {
   // read battery
-  battery = ReadBattery();
+  battery = readBattery();
   String FINALBATLEVEL = "", FINALBAT = "0";
 
   if (battery == 0) {
@@ -381,7 +387,7 @@ void sendBatteryData() {
   } else {
     int count = 0;
     while ((battery > 0) and (count < 90)) {
-      battery = ReadBattery();
+      battery = readBattery();
       delay(1000);
       count++;
     }
@@ -391,12 +397,9 @@ void sendBatteryData() {
     FINALBATLEVEL = "";
     FINALBAT = "";
   } else {
-    float batterylevel = (((float)battery - 3) / 1.2) * 100;
+    int batterylevel = batteryPercentFromVoltage(battery);
     FINALBAT = String(battery, 2);
-    if (batterylevel > 100) {
-      batterylevel = 100;
-    }
-    FINALBATLEVEL = String(batterylevel, 0);
+    FINALBATLEVEL = String(batterylevel);
   }
 
   // send battery status to Home Assistant
