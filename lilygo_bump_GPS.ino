@@ -47,6 +47,7 @@ const char resource[] = "/api/states/input_boolean.lilygo_bump_status";
 const char batteryResource[] = "/api/states/sensor.lilygo_battery";
 
 const int traccarPort        = 5055;
+// const char traccarServer[]   = "46.101.24.212"; // demo server
 const char traccarServer[]   = "73.243.144.236"; // your unique traccar server ip
 String myTraccarID = "lilygobumpgps";
 // const char server[]   = "httpbin.org"; // B - WORKING POST
@@ -147,7 +148,7 @@ void wakeup_routine(){
     }
     case ESP_SLEEP_WAKEUP_TOUCHPAD : SerialMon.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP : SerialMon.println("Wakeup caused by ULP program"); break;
-    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",WAKEUP_REASON); break;
+    default : SerialMon.printf("Wakeup was not caused by deep sleep: %d\n",WAKEUP_REASON); dispatchGPSData(); break;
   }
 }
 
@@ -266,7 +267,12 @@ void modemPowerOff(){
 void modemRestart(){
   modemPowerOff();
   delay(1000);
-  modemPowerOn();
+  // Preserve GNSS hot state while moving by skipping power toggle
+  if (!rtcMoving) {
+    modemPowerOn();
+  } else {
+    SerialMon.println("Motion mode: skipping modemPowerOn to preserve GNSS state");
+  }
 }
 
 void enableGPS(void) {
@@ -312,11 +318,12 @@ void sendData(float lat, float lon, float speed, float alt, float accuracy, floa
     FINALIGNITION = "false";
   }
 
-  SerialMon.print(F("Performing HTTPS POST request to Traccar... "));
+  SerialMon.print(F("Performing HTTP POST request to Traccar... "));
   int err = traccarHttp.post("/?id=" + myTraccarID + "&lat=" + FINALLATI + "&lon=" + FINALLOGI + "&accuracy=" + FINALACCURACY + "&altitude=" + FINALALT + "&speed=" + FINALSPEED + "&battery=" + FINALBAT + "&ignition=" + FINALIGNITION + "&batteryLevel=" + FINALBATLEVEL);
   Serial.println("/?id=" + myTraccarID + "&lat=" + FINALLATI + "&lon=" + FINALLOGI + "&accuracy=" + FINALACCURACY + "&altitude=" + FINALALT + "&speed=" + FINALSPEED + "&battery=" + FINALBAT + "&ignition=" + FINALIGNITION + "&batteryLevel=" + FINALBATLEVEL);
   if (err != 0) {
-    SerialMon.println(F("failed to connect"));
+    SerialMon.println(F("failed to connect, error:"));
+    SerialMon.println(err);
     delay(1000);
   }
 
@@ -506,7 +513,18 @@ void setup() {
   // To skip it, call init() instead of restart()
   SerialMon.println("Initializing modem...");
   if (!modem.init()) {
-    Serial.println("Failed to restart modem, attempting to continue without restarting");
+    Serial.println("Modem init failed");
+    if (rtcMoving) {
+      // If we preserved power but init failed, try a controlled power toggle once
+      Serial.println("Attempting modem power toggle to recover while in motion mode");
+      modemPowerOn();
+      delay(1000);
+      if (!modem.init()) {
+        Serial.println("Modem init still failing after power toggle");
+      }
+    } else {
+      Serial.println("Attempting to continue without restarting");
+    }
   }
   // modem.init();
 
@@ -563,17 +581,22 @@ void loop() {
   modem.gprsDisconnect();
   SerialMon.println(F("GPRS disconnected"));
 
-  // --------POWER DOWN--------
-  // Try to power-off (modem may decide to restart automatically)
-  // To turn off modem completely, please use Reset/Enable pins
-  modem.sendAT("+CPOWD=1");
-  if (modem.waitResponse(10000L) != 1) {
-    DBG("+CPOWD=1");
+  // --------POWER DOWN / SLEEP STRATEGY--------
+  // While moving, keep modem/GNSS powered to preserve hot start; otherwise power off for savings
+  if (!rtcMoving) {
+    // Try to power-off (modem may decide to restart automatically)
+    // To turn off modem completely, please use Reset/Enable pins
+    modem.sendAT("+CPOWD=1");
+    if (modem.waitResponse(10000L) != 1) {
+      DBG("+CPOWD=1");
+    }
+    // The following command does the same as the previous lines
+    Serial.println("Poweroff and go to sleep.");
+    flash_led(3, 500);
+    modem.poweroff();
+  } else {
+    Serial.println("Motion mode: keeping modem/GNSS powered for warm/hot start");
   }
-  // The following command does the same as the previous lines
-  Serial.println("Poweroff and go to sleep.");
-  flash_led(3, 500);
-  modem.poweroff();
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0);
   // Choose next sleep duration based on state
   uint32_t nextSleepSec = TIME_TO_SLEEP;
