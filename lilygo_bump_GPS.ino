@@ -95,6 +95,9 @@ esp_sleep_wakeup_cause_t WAKEUP_REASON;
 RTC_DATA_ATTR bool rtcMoving = false;             // In motion mode (suppress alarm/HA, use 3-min timer, send GPS on timer)
 RTC_DATA_ATTR bool rtcBumpWindowActive = false;   // First bump seen; waiting for second within 3 minutes
 RTC_DATA_ATTR uint8_t rtcNoMotionIntervals = 0;   // Consecutive timer-only intervals while in motion
+RTC_DATA_ATTR bool rtcHasLastFix = false;         // We have a last known GPS fix
+RTC_DATA_ATTR float rtcLastLat = 0.0f;            // Last known latitude
+RTC_DATA_ATTR float rtcLastLon = 0.0f;            // Last known longitude
 
 // Non-RTC per-boot flag to control HA bump send on this wake
 bool g_sendBumpHAThisBoot = false;
@@ -117,7 +120,7 @@ void wakeup_routine(){
       if (g_sendBumpHAThisBoot) {
         // First bump in window: report to HA
         sendBumpStatus();
-        sendBatteryData();
+        // sendBatteryData();
       } else {
         SerialMon.println("Suppressing HA/alarm due to bump window or moving mode");
       }
@@ -140,6 +143,26 @@ void wakeup_routine(){
         rtcNoMotionIntervals++;
         if (rtcNoMotionIntervals >= MOVING_IDLE_MAX_INTERVALS) {
           SerialMon.println("No bumps across intervals; exiting motion mode");
+          // Send a final update to mark motion=no using last known coordinates
+          if (rtcHasLastFix) {
+            SerialMon.println("Sending final motion=no update to Traccar");
+            // Build and send a minimal motion=no post
+            HttpClient traccarHttp(traccarClient, traccarServer, traccarPort);
+            String latStr = String(rtcLastLat, 8);
+            String lonStr = String(rtcLastLon, 8);
+            String url = String("/?id=") + myTraccarID + "&lat=" + latStr + "&lon=" + lonStr + "&motion=no";
+            int err = traccarHttp.post(url);
+            if (err != 0) {
+              SerialMon.print(F("final motion=no post failed: "));
+              SerialMon.println(err);
+            }
+            int status = traccarHttp.responseStatusCode();
+            SerialMon.print("final motion=no status: ");
+            SerialMon.println(status);
+            traccarHttp.stop();
+          } else {
+            SerialMon.println("No last fix available; skipping final motion=no post");
+          }
           rtcMoving = false;
           rtcNoMotionIntervals = 0;
         }
@@ -325,8 +348,19 @@ void sendData(float lat, float lon, float speed, float alt, float accuracy, floa
   }
 
   SerialMon.print(F("Performing HTTP POST request to Traccar... "));
-  int err = traccarHttp.post("/?id=" + myTraccarID + "&lat=" + FINALLATI + "&lon=" + FINALLOGI + "&accuracy=" + FINALACCURACY + "&altitude=" + FINALALT + "&speed=" + FINALSPEED + "&battery=" + FINALBAT + "&ignition=" + FINALIGNITION + "&batteryLevel=" + FINALBATLEVEL);
-  Serial.println("/?id=" + myTraccarID + "&lat=" + FINALLATI + "&lon=" + FINALLOGI + "&accuracy=" + FINALACCURACY + "&altitude=" + FINALALT + "&speed=" + FINALSPEED + "&battery=" + FINALBAT + "&ignition=" + FINALIGNITION + "&batteryLevel=" + FINALBATLEVEL);
+  String motionParam = rtcMoving ? String("&motion=true") : String("");
+  String url = String("/?id=") + myTraccarID +
+               "&lat=" + FINALLATI +
+               "&lon=" + FINALLOGI +
+               "&accuracy=" + FINALACCURACY +
+               "&altitude=" + FINALALT +
+               "&speed=" + FINALSPEED +
+               "&battery=" + FINALBAT +
+               "&ignition=" + FINALIGNITION +
+               "&batteryLevel=" + FINALBATLEVEL +
+               motionParam;
+  int err = traccarHttp.post(url);
+  Serial.println(url);
   if (err != 0) {
     SerialMon.println(F("failed to connect, error:"));
     SerialMon.println(err);
@@ -357,7 +391,11 @@ void dispatchGPSData() {
     if (modem.getGPS(&lat, &lon, &speed, &alt, &vsat, &usat, &accuracy, &year, &month, &day, &hour, &min, &sec)) {
       SerialMon.println("get GPS worked");
       SerialMon.printf("lat:%f lon:%f\n", lat, lon);
-      sendData(lat, lon, speed, alt, accuracy, battery);
+  // Save last fix in RTC for potential motion=no exit update
+  rtcLastLat = lat;
+  rtcLastLon = lon;
+  rtcHasLastFix = true;
+  sendData(lat, lon, speed, alt, accuracy, battery);
       break;
     } else {
       Serial.print("get GPS reattempting...");
